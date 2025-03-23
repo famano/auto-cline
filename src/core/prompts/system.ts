@@ -137,7 +137,24 @@ Parameters:
 Usage:
 <list_code_definition_names>
 <path>Directory path here</path>
-</list_code_definition_names>${
+</list_code_definition_names>
+
+## convert_files
+Description: Request to convert files between different formats. This tool supports converting between xlsx and csv, docx and md, and pptx and md formats. It can convert individual files or all files in a directory. For docx and pptx conversions, pandoc is used and a reference document can be specified for styling.
+Parameters:
+- mode: (required) The conversion mode. Valid values are: 'xlsx-to-csv', 'csv-to-xlsx', 'docx-to-md', 'md-to-docx', 'pptx-to-md', 'md-to-pptx'.
+- input_path: (required) The path of the file or directory to convert (relative to the current working directory ${cwd.toPosix()}).
+- output_path: (optional) The path where the converted file or directory will be saved (relative to the current working directory ${cwd.toPosix()}). If not provided, the output will be saved in the same directory as the input with the appropriate extension.
+- reference_doc_path: (optional) The path to a reference document for pandoc conversions (docx and pptx). This allows specifying styles for the conversion.
+- recursive: (optional) Whether to process subdirectories recursively when converting a directory. Default is false.
+Usage:
+<convert_files>
+<mode>xlsx-to-csv</mode>
+<input_path>path/to/file.xlsx</input_path>
+<output_path>path/to/output.csv (optional)</output_path>
+<reference_doc_path>path/to/reference.docx (optional)</reference_doc_path>
+<recursive>true or false (optional)</recursive>
+</convert_files>${
 	supportsComputerUse
 		? `
 

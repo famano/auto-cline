@@ -4,6 +4,7 @@ node_modules
 tmp
 .vscode-test/
 *.vsix
+memory-bank
 
 .DS_Store
 
