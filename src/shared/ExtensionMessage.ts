@@ -177,11 +177,17 @@ export interface ClineSayTool {
 		| "listFilesRecursive"
 		| "listCodeDefinitionNames"
 		| "searchFiles"
+		| "convertFiles"
 	path?: string
 	diff?: string
 	content?: string
 	regex?: string
 	filePattern?: string
+	mode?: string
+	inputPath?: string
+	outputPath?: string
+	referenceDocPath?: string
+	recursive?: boolean
 }
 
 // must keep in sync with system prompt

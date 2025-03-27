@@ -65,7 +65,7 @@ export async function convertDirectory(
 	dirPath: string,
 	mode: ConversionMode,
 	options: DirectoryConversionOptions = {},
-): Promise<ConversionResult> {
+): Promise<string> {
 	// Initialize result
 	const result: ConversionResult = {
 		successCount: 0,
@@ -84,10 +84,23 @@ export async function convertDirectory(
 		// Process directory
 		await processDirectory(dirPath, mode, options, result, sourceExt)
 
-		return result
+		return formatResult(result)
 	} catch (error) {
 		throw new Error(`Error converting directory: ${error instanceof Error ? error.message : String(error)}`)
 	}
+}
+
+function formatResult(result: ConversionResult): string {
+	let formatted = `Converted ${result.successCount} files, failed ${result.failCount}.\n\n`
+	formatted += "success:\n"
+	for (const file of result.convertedFiles) {
+		formatted += `${file}\n`
+	}
+	formatted += "\nfailed:\n"
+	for (const file of result.failedFiles) {
+		formatted += `${file}\n`
+	}
+	return formatted
 }
 
 /**
@@ -141,7 +154,7 @@ async function processDirectory(
 /**
  * Convert a single file based on the specified mode
  */
-async function convertFile(
+export async function convertFile(
 	filePath: string,
 	mode: ConversionMode,
 	outputPath?: string,

@@ -16,6 +16,7 @@ export const toolUseNames = [
 	"search_files",
 	"list_files",
 	"list_code_definition_names",
+	"convert_files",
 	"browser_action",
 	"use_mcp_tool",
 	"access_mcp_resource",
@@ -48,6 +49,10 @@ export const toolParamNames = [
 	"options",
 	"response",
 	"result",
+	"mode",
+	"input_path",
+	"output_path",
+	"reference_doc_path",
 ] as const
 
 export type ToolParamName = (typeof toolParamNames)[number]

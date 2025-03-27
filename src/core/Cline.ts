@@ -68,6 +68,7 @@ import { ConversationTelemetryService, TelemetryChatMessage } from "../services/
 import pTimeout from "p-timeout"
 import { GlobalFileNames } from "../global-constants"
 import { checkIsOpenRouterContextWindowError } from "./context-management/context-error-handling"
+import { ConversionMode, convertDirectory, convertFile } from "../integrations/fileconverter/directory-converter"
 
 const cwd = vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath).at(0) ?? path.join(os.homedir(), "Desktop") // may or may not exist but fs checking existence would immediately ask for permission which would be bad UX, need to come up with a better solution
 
@@ -1250,6 +1251,7 @@ export class Cline {
 					return this.autoApprovalSettings.actions.readFiles
 				case "write_to_file":
 				case "replace_in_file":
+				case "convert_files": //TODO add specific auto approval setting for convert files
 					return this.autoApprovalSettings.actions.editFiles
 				case "execute_command":
 					return this.autoApprovalSettings.actions.executeCommands
@@ -1599,6 +1601,10 @@ export class Cline {
 							return `[${block.name}]`
 						case "attempt_completion":
 							return `[${block.name}]`
+						case "convert_files":
+							return `[${block.name} - ${block.params.mode} for '${block.params.input_path}'${
+								block.params.output_path ? ` to '${block.params.output_path}'` : ""
+							}]`
 					}
 				}
 
@@ -2564,6 +2570,101 @@ export class Cline {
 						} catch (error) {
 							await handleError("executing command", error)
 
+							break
+						}
+					}
+					case "convert_files": {
+						const mode: ConversionMode = block.params.mode as ConversionMode
+						const input_path: string | undefined = block.params.input_path
+						const output_path: string | undefined = block.params.output_path
+						const reference_doc_path: string | undefined = block.params.reference_doc_path
+						const recursive: string | undefined = block.params.recursive
+						const sharedMessageProps: ClineSayTool = {
+							tool: "convertFiles",
+							mode: removeClosingTag("mode", mode),
+							inputPath: removeClosingTag("input_path", input_path),
+							outputPath: removeClosingTag("output_path", output_path),
+							referenceDocPath: removeClosingTag("reference_doc_path", reference_doc_path),
+							recursive: removeClosingTag("recursive", recursive) === "true",
+						}
+
+						try {
+							if (block.partial) {
+								const partialMessage = JSON.stringify({
+									...sharedMessageProps,
+									content: "",
+								} satisfies ClineSayTool)
+
+								if (this.shouldAutoApproveTool(block.name)) {
+									this.removeLastPartialMessageIfExistsWithType("ask", "tool")
+									await this.say("tool", partialMessage, undefined, true)
+								} else {
+									this.removeLastPartialMessageIfExistsWithType("say", "tool")
+									await this.ask("tool", partialMessage, true)
+								}
+								break
+							} else {
+								if (!mode) {
+									this.consecutiveMistakeCount++
+									pushToolResult(await this.sayAndCreateMissingParamError("convert_files", "mode"))
+									break
+								}
+
+								if (!input_path) {
+									this.consecutiveMistakeCount++
+									pushToolResult(await this.sayAndCreateMissingParamError("convert_files", "input_path"))
+									break
+								}
+								this.consecutiveMistakeCount = 0
+
+								const absoluteInputPath = path.resolve(cwd, input_path)
+								const completeMessage = JSON.stringify({
+									...sharedMessageProps,
+									content: absoluteInputPath,
+								} satisfies ClineSayTool)
+
+								const pathStats = await fs.lstat(input_path)
+								if (this.shouldAutoApproveTool(block.name)) {
+									this.removeLastPartialMessageIfExistsWithType("ask", "tool")
+									await this.say("tool", completeMessage, undefined, false)
+									this.consecutiveAutoApprovedRequestsCount++
+								} else {
+									// Validate directory exists
+									await fs.access(input_path)
+
+									let notification: string = ""
+									if (pathStats.isDirectory()) {
+										notification = `Cline wants to convert files of ${input_path}${recursive === "true" ? " recursively" : ""}, mode: ${mode}`
+									} else {
+										notification = `Cline wants to convert ${path.basename(input_path)}, mode: ${mode}`
+									}
+									showNotificationForApprovalIfAutoApprovalEnabled(notification)
+
+									this.removeLastPartialMessageIfExistsWithType("say", "tool")
+									await this.ask("tool", completeMessage, false)
+									const didApprove = await askApproval("tool", completeMessage)
+									if (!didApprove) {
+										break
+									}
+								}
+
+								//execute conversion
+								if (pathStats.isDirectory()) {
+									const result = await convertDirectory(input_path, mode, {
+										outputDir: output_path,
+										recursive: recursive === "true",
+										referenceDocPath: reference_doc_path,
+									})
+									pushToolResult(result)
+								} else {
+									const result = await convertFile(input_path, mode, output_path, reference_doc_path)
+									pushToolResult(result)
+								}
+								this.saveCheckpoint()
+								break
+							}
+						} catch (error) {
+							await handleError("convert file", error)
 							break
 						}
 					}
@@ -3573,6 +3674,83 @@ export class Cline {
 		} catch (error) {
 			// this should never happen since the only thing that can throw an error is the attemptApiRequest, which is wrapped in a try catch that sends an ask where if noButtonClicked, will clear current task and destroy this instance. However to avoid unhandled promise rejection, we will end this loop which will end execution of this instance (see startTask)
 			return true // needs to be true so parent loop knows to end task
+		}
+	}
+
+	async executeConvertFiles(
+		mode: ConversionMode,
+		inputPath: string,
+		outputPath?: string,
+		referenceDocPath?: string,
+		recursive?: boolean,
+	): Promise<[boolean, ToolResponse]> {
+		try {
+			// Check mode validity
+			const validModes = ["xlsx-to-csv", "csv-to-xlsx", "docx-to-md", "md-to-docx", "pptx-to-md", "md-to-pptx"]
+			if (!validModes.includes(mode)) {
+				throw new Error(`Invalid conversion mode: ${mode}. Valid modes are: ${validModes.join(", ")}`)
+			}
+
+			// Resolve paths
+			const absoluteInputPath = path.resolve(cwd, inputPath)
+			const absoluteOutputPath = outputPath ? path.resolve(cwd, outputPath) : undefined
+			const absoluteReferenceDocPath = referenceDocPath ? path.resolve(cwd, referenceDocPath) : undefined
+
+			// Check if input path exists
+			if (!(await fileExistsAtPath(absoluteInputPath))) {
+				throw new Error(`Input path does not exist: ${inputPath}`)
+			}
+
+			// Import the correct converter functions
+			const {
+				convertXlsxToCsv,
+				convertCsvToXlsx,
+				convertDocxToMd,
+				convertMdToDocx,
+				convertPptxToMd,
+				convertMdToPptx,
+				convertDirectory,
+			} = await import("../integrations/fileconverter")
+
+			// Check if input is a directory
+			const isDir = await isDirectory(absoluteInputPath)
+			let result
+
+			if (isDir) {
+				// Use directory converter
+				result = await convertDirectory(absoluteInputPath, mode, {
+					referenceDocPath: absoluteReferenceDocPath,
+					outputDir: absoluteOutputPath,
+					recursive,
+				})
+			} else {
+				// Single file conversion
+				switch (mode) {
+					case "xlsx-to-csv":
+						result = await convertXlsxToCsv(absoluteInputPath, absoluteOutputPath)
+						break
+					case "csv-to-xlsx":
+						result = await convertCsvToXlsx(absoluteInputPath, absoluteOutputPath)
+						break
+					case "docx-to-md":
+						result = await convertDocxToMd(absoluteInputPath, absoluteOutputPath)
+						break
+					case "md-to-docx":
+						result = await convertMdToDocx(absoluteInputPath, absoluteOutputPath, absoluteReferenceDocPath)
+						break
+					case "pptx-to-md":
+						result = await convertPptxToMd(absoluteInputPath, absoluteOutputPath)
+						break
+					case "md-to-pptx":
+						result = await convertMdToPptx(absoluteInputPath, absoluteOutputPath, absoluteReferenceDocPath)
+						break
+				}
+			}
+
+			return [false, `Conversion completed successfully.\n${result}`]
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error)
+			return [false, `Error during file conversion: ${errorMessage}`]
 		}
 	}
 
