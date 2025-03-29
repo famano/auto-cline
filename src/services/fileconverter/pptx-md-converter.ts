@@ -1,7 +1,8 @@
 import * as fs from "fs/promises"
 import * as path from "path"
 
-const nodePandoc = require("node-pandoc")
+// @ts-ignore
+export const nodePandoc = require("node-pandoc")
 
 /**
  * Converts a PPTX file to Markdown format using pandoc

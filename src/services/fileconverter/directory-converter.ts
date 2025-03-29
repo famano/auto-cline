@@ -97,9 +97,9 @@ function formatResult(result: ConversionResult): string {
 		formatted += `${file}\n`
 	}
 	formatted += "\nfailed:\n"
-	for (const file of result.failedFiles) {
-		formatted += `${file}\n`
-	}
+	result.failedFiles.forEach((error, file) => {
+		formatted += `${file}: ${error}\n`
+	})
 	return formatted
 }
 

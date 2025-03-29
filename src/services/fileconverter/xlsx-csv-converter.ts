@@ -28,20 +28,15 @@ export async function convertXlsxToCsv(inputPath: string, outputPath?: string, d
 		// Read the XLSX file
 		const workbook = xlsx.parse(inputPath)
 
-		for (let i = 0; i > workbook.length; i++) {
-			let worksheet = workbook[i].data
+		if (workbook.length > 0) {
+			const worksheet = workbook[0].data
 			// Convert to CSV
-			let csvArray = []
-			for (let j = 0; worksheet.length; j++) {
+			const csvArray = []
+			for (let j = 0; j < worksheet.length; j++) {
 				csvArray.push(worksheet[j].join(delimiter))
 			}
 			const csv = csvArray.join("\n")
-			const parsedOutputPath = path.parse(outputPath)
-			if (workbook.length > 2) {
-				await fs.writeFile(path.join(parsedOutputPath.dir, `${parsedOutputPath.name}_sheet${i + 1}.csv`), csv, "utf8")
-			} else {
-				await fs.writeFile(outputPath, csv, "utf8")
-			}
+			await fs.writeFile(outputPath, csv, "utf8")
 		}
 		return outputPath
 	} catch (error) {

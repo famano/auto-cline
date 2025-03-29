@@ -68,7 +68,7 @@ import { ConversationTelemetryService, TelemetryChatMessage } from "../services/
 import pTimeout from "p-timeout"
 import { GlobalFileNames } from "../global-constants"
 import { checkIsOpenRouterContextWindowError } from "./context-management/context-error-handling"
-import { ConversionMode, convertDirectory, convertFile } from "../integrations/fileconverter/directory-converter"
+import { ConversionMode, convertDirectory, convertFile } from "../services/fileconverter/directory-converter"
 
 const cwd = vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath).at(0) ?? path.join(os.homedir(), "Desktop") // may or may not exist but fs checking existence would immediately ask for permission which would be bad UX, need to come up with a better solution
 
@@ -2600,7 +2600,7 @@ export class Cline {
 									await this.say("tool", partialMessage, undefined, true)
 								} else {
 									this.removeLastPartialMessageIfExistsWithType("say", "tool")
-									await this.ask("tool", partialMessage, true)
+									await this.ask("tool", partialMessage, true).catch(() => {})
 								}
 								break
 							} else {
@@ -2623,14 +2623,14 @@ export class Cline {
 									content: absoluteInputPath,
 								} satisfies ClineSayTool)
 
-								const pathStats = await fs.lstat(input_path)
+								const pathStats = await fs.lstat(absoluteInputPath)
 								if (this.shouldAutoApproveTool(block.name)) {
 									this.removeLastPartialMessageIfExistsWithType("ask", "tool")
 									await this.say("tool", completeMessage, undefined, false)
 									this.consecutiveAutoApprovedRequestsCount++
 								} else {
 									// Validate directory exists
-									await fs.access(input_path)
+									await fs.access(absoluteInputPath)
 
 									let notification: string = ""
 									if (pathStats.isDirectory()) {
@@ -2650,14 +2650,14 @@ export class Cline {
 
 								//execute conversion
 								if (pathStats.isDirectory()) {
-									const result = await convertDirectory(input_path, mode, {
+									const result = await convertDirectory(absoluteInputPath, mode, {
 										outputDir: output_path,
 										recursive: recursive === "true",
 										referenceDocPath: reference_doc_path,
 									})
 									pushToolResult(result)
 								} else {
-									const result = await convertFile(input_path, mode, output_path, reference_doc_path)
+									const result = await convertFile(absoluteInputPath, mode, output_path, reference_doc_path)
 									pushToolResult(result)
 								}
 								this.saveCheckpoint()
@@ -3710,7 +3710,7 @@ export class Cline {
 				convertPptxToMd,
 				convertMdToPptx,
 				convertDirectory,
-			} = await import("../integrations/fileconverter")
+			} = await import("../services/fileconverter")
 
 			// Check if input is a directory
 			const isDir = await isDirectory(absoluteInputPath)
